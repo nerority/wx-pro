@@ -147,6 +147,28 @@ function alertDetailsHtml(a) {
   </details>`;
 }
 
+/* ---------- Base map: Esri Dark Gray (no key), falling back to OpenStreetMap darkened in CSS ---------- */
+const BASEMAPS = [
+  { name: 'esri',
+    base: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    labels: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+    maxNative: 16, attribution: 'Base map &copy; Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' },
+  { name: 'osm', cls: 'osm-dark',
+    base: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    maxNative: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' },
+];
+function addBaseMap(map, k = 0) {
+  const bm = BASEMAPS[k]; if (!bm) return;
+  (radar.baseLayers || []).forEach(l => map.removeLayer(l));
+  let ok = 0, bad = 0;
+  const base = L.tileLayer(bm.base, { maxNativeZoom: bm.maxNative, maxZoom: 19, attribution: bm.attribution, className: bm.cls || '' });
+  base.on('tileload', () => { ok++; });
+  base.on('tileerror', () => { bad++; if (!ok && bad >= 4 && k + 1 < BASEMAPS.length) { console.warn('basemap ' + bm.name + ' failing, switching'); addBaseMap(map, k + 1); } });
+  radar.baseLayers = [base.addTo(map)];
+  if (bm.labels) radar.baseLayers.push(L.tileLayer(bm.labels, { maxNativeZoom: bm.maxNative, maxZoom: 19, pane: 'labels' }).addTo(map));
+  radar.baseName = bm.name;
+}
+
 /* ---------- Radar map ---------- */
 function radarUrl(min) { return `${IEM_TILES}nexrad-n0q-900913${min ? '-m' + String(min).padStart(2, '0') + 'm' : ''}/{z}/{x}/{y}.png?v=${radar.bucket}`; }
 function frameLabel(i) {
@@ -254,8 +276,7 @@ function renderRadar() {
     map.createPane('warn').style.zIndex = 420;
     map.createPane('labels').style.zIndex = 450; map.getPane('labels').style.pointerEvents = 'none';
     map.createPane('places').style.zIndex = 460;
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>' }).addTo(map);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19, pane: 'labels' }).addTo(map);
+    addBaseMap(map);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     map.attributionControl.setPrefix(false);
     const c = place ? [place.lat, place.lon] : [37.5, -96]; map.setView(c, place ? 8 : 4); radar.centeredOn = place?.id;

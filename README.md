@@ -19,7 +19,7 @@ Live at: https://nerority.github.io/wx-pro/ — open it in Chrome on Android and
 - Past forecasts for grading: Open-Meteo Previous Runs API
 - Radar: [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/) NEXRAD composite tiles
 - Severe outlooks: NOAA SPC via the NWS map services
-- Base map: © OpenStreetMap contributors, © CARTO
+- Base map: Esri World Dark Gray Canvas (fallback: OpenStreetMap)
 - Charts: [Chart.js](https://www.chartjs.org/) (MIT); maps: [Leaflet](https://leafletjs.com/) (BSD-2), bundled in `vendor/`
 
 Not an official warning source. For life-safety decisions, rely on NWS warnings and local officials.
