@@ -59,6 +59,10 @@ const state = {
   data: {},            // placeId -> bundle
   loading: false,
   openDay: null,
+  method: store.get('method', 'best'),    // 'best' (skill-weighted) or 'median'
+  skillWin: store.get('skillWin', '7'),
+  skillLead: 1,
+  skill: {},
 };
 if (!state.places.find(p => p.id === state.activeId)) state.activeId = state.places[0]?.id || null;
 if (!PLOTS[state.plot]) state.plot = 'temp';
@@ -259,8 +263,10 @@ async function loadPlace(place, force = false) {
     alerts: alerts.status === 'fulfilled' ? alerts.value : null,
     alertErr: alerts.status === 'rejected' ? alerts.reason?.message : null,
   };
+  bundle.placeId = place.id;
   buildGrid(bundle);
   state.data[place.id] = bundle;
+  try { recordNwsSnapshot(place, bundle); } catch {}
   return bundle;
 }
 
@@ -315,9 +321,12 @@ function computeDaily(b) {
   return out;
 }
 
+function dayLead(b, key) { const n = Math.round((Date.parse(key + 'T12:00:00Z') - Date.parse(b.todayKey + 'T12:00:00Z')) / 864e5); return leadFor(Math.max(0, n) * 24); }
+
 function dayConsensus(b, key) {
   const per = b.daily[key] || {}; const ids = Object.keys(per).filter(id => state.enabled.has(id));
   const g = k => ids.map(id => per[id][k]);
+  const L = dayLead(b, key); const cmb = (k, kind) => combine(b.placeId, ids.map(id => [id, per[id][k]]), L, kind);
   const n = ids.length;
   if (!n) return null;
   const rainIds = ids.filter(id => per[id].precip != null);
@@ -330,7 +339,7 @@ function dayConsensus(b, key) {
   let pc = (wetFrac > 0.25 && wetFrac < 0.75) ? 0 : (wetFrac > 0.15 && wetFrac < 0.85) ? 1 : 2;
   let conf = n < 3 ? null : Math.min(tc, pc);
   return {
-    n, ids, hi: median(g('hi')), lo: median(g('lo')), hiMin: min(g('hi')), hiMax: max(g('hi')), loMin: min(g('lo')), loMax: max(g('lo')),
+    n, ids, hi: cmb('hi', 'temp'), lo: cmb('lo', 'temp'), hiMin: min(g('hi')), hiMax: max(g('hi')), loMin: min(g('lo')), loMax: max(g('lo')),
     precip: median(g('precip')), precipMax: max(g('precip')), snow: median(g('snow')),
     pop: mean(g('pop')), wet, rainN: rainIds.length, tSpread, conf, tc, pc,
     gust: median(g('gust')), cloudDay: mean(g('cloudDay')), thunder: ids.filter(id => per[id].thunder).length,
@@ -340,10 +349,12 @@ function dayConsensus(b, key) {
 function hourConsensus(b, i) {
   const ids = okIds(b).filter(id => b.cols[id].temp[i] != null);
   const g = k => ids.map(id => b.cols[id][k][i]);
+  const L = leadFor(Math.max(0, (b.times[i] - b.nowH) / 3600));
+  const cmb = (k, kind) => combine(b.placeId, ids.map(id => [id, b.cols[id][k][i]]), L, kind);
   return {
-    n: ids.length, temp: median(g('temp')), tMin: min(g('temp')), tMax: max(g('temp')),
+    n: ids.length, temp: cmb('temp', 'temp'), tMin: min(g('temp')), tMax: max(g('temp')),
     precip: median(g('precip')), pop: mean(g('pop')), snow: median(g('snow')), cloud: median(g('cloud')),
-    wind: median(g('wind')), gust: median(g('gust')), feels: median(g('feels')),
+    wind: median(g('wind')), gust: median(g('gust')), feels: cmb('feels', 'temp'),
     thunder: g('code').filter(v => v != null && v >= 95).length / Math.max(1, nums(g('code')).length),
   };
 }
@@ -468,7 +479,7 @@ function renderHourly(b) {
       <div class="p">${c.pop != null && c.pop >= 10 ? Math.round(c.pop / 5) * 5 + '%' : (c.precip ?? 0) >= 0.01 ? fmtIn(c.precip) + '"' : ''}</div>
     </div>`);
   }
-  return `<div class="card"><h2>Next 24 hours <span class="h2-note">· consensus, ± = model spread</span></h2><div class="hours">${cells.join('')}</div></div>`;
+  return `<div class="card"><h2>Next 24 hours <span class="h2-note">· ${consensusName(b.placeId).toLowerCase()}, ± = model spread</span></h2><div class="hours">${cells.join('')}</div></div>`;
 }
 
 function renderDaily(b) {
@@ -555,7 +566,7 @@ function renderCompare() {
     const has = !!b.cols[s.id]; const on = has && state.enabled.has(s.id);
     return `<button class="src ${on ? '' : 'off'}" data-src="${s.id}" ${has ? '' : 'disabled'} title="${esc(s.full)}">
       <span class="sw" style="background:${s.color}"></span>${s.name}${has ? '' : ' <span class="note">n/a</span>'}</button>`;
-  }).join('') + `<span class="src" style="cursor:default"><span class="sw cons"></span>Consensus</span>`;
+  }).join('') + `<span class="src" style="cursor:default"><span class="sw cons"></span>${(plot.key === 'temp' || plot.key === 'feels') ? consensusName(b.placeId) : 'Consensus'}</span>`;
 
   el.innerHTML = `
     <div class="chips chip-row">${Object.entries(PLOTS).map(([k, p]) => `<button class="chip ${k === state.plot ? 'on' : ''}" data-plot="${k}">${p.label}</button>`).join('')}</div>
@@ -590,7 +601,13 @@ function drawChart(b, plot, i0, i1) {
   const ids = okIds(b);
   const series = {}; for (const id of ids) { const s = seriesFor(b, id, plot, i0, i1); if (s) series[id] = s; }
   const lo = [], hi = [], md = [];
-  xs.forEach((x, j) => { const vals = Object.values(series).map(s => s[j]); const n = nums(vals); lo.push(n.length >= 2 ? Math.min(...n) : null); hi.push(n.length >= 2 ? Math.max(...n) : null); md.push(n.length ? median(n) : null); });
+  const tempLike = plot.key === 'temp' || plot.key === 'feels';
+  xs.forEach((x, j) => {
+    const vals = Object.values(series).map(s => s[j]); const n = nums(vals);
+    lo.push(n.length >= 2 ? Math.min(...n) : null); hi.push(n.length >= 2 ? Math.max(...n) : null);
+    const L = leadFor(Math.max(0, (x / 1000 - b.nowH) / 3600));
+    md.push(!n.length ? null : tempLike ? combine(b.placeId, Object.entries(series).map(([id, s]) => [id, s[j]]), L, 'temp') : median(n));
+  });
   const pts = arr => xs.map((x, j) => ({ x, y: arr[j] }));
 
   const datasets = [
@@ -600,7 +617,7 @@ function drawChart(b, plot, i0, i1) {
       label: SRC[id].name, data: pts(s), borderColor: SRC[id].color, backgroundColor: SRC[id].color,
       borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, spanGaps: true, _src: id,
     })),
-    { label: 'Consensus', data: pts(md), borderColor: ink, backgroundColor: ink, borderWidth: 3, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 4, tension: 0.25, spanGaps: true },
+    { label: tempLike ? consensusName(b.placeId) : 'Consensus', data: pts(md), borderColor: ink, backgroundColor: ink, borderWidth: 3, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 4, tension: 0.25, spanGaps: true },
   ];
 
   // Ticks at local midnight (and noon on short ranges)
@@ -710,10 +727,12 @@ function dailyTable(b, plot) {
       return `<td class="${cls}">${fmt(val(b.daily[k] || {}, id))}</td>`;
     }).join('')}</tr>`;
   }).join('');
-  const consRow = `<tr class="cons"><td>Consensus</td>${keys.map(k => {
-    const per = b.daily[k] || {}; const vs = ids.filter(id => state.enabled.has(id)).map(id => val(per, id)).filter(v => v != null);
-    if (!vs.length) return '<td>—</td>';
-    return `<td>${fmt(Array.isArray(vs[0]) ? [median(vs.map(v => v[0])), median(vs.map(v => v[1]))] : median(vs))}</td>`;
+  const tempLike = plot.daily === 'hilo';
+  const consRow = `<tr class="cons"><td>${tempLike ? consensusName(b.placeId) : 'Consensus'}</td>${keys.map(k => {
+    const per = b.daily[k] || {}; const live = ids.filter(id => state.enabled.has(id)).map(id => [id, val(per, id)]).filter(x => x[1] != null);
+    if (!live.length) return '<td>—</td>';
+    const L = dayLead(b, k);
+    return `<td>${fmt(tempLike ? [combine(b.placeId, live.map(([id, v]) => [id, v[0]]), L, 'temp'), combine(b.placeId, live.map(([id, v]) => [id, v[1]]), L, 'temp')] : median(live.map(x => x[1])))}</td>`;
   }).join('')}</tr>`;
   return `<table class="grid">${head}${rows}${consRow}</table>`;
 }
@@ -797,13 +816,15 @@ function updateHeader() {
   const b = p && state.data[p.id];
   $('#placeSub').textContent = p ? [p.sub, b ? 'updated ' + ago(b.fetchedAt) : (state.loading ? 'loading…' : '')].filter(Boolean).join(' · ') : '';
 }
-function currentTab() { const h = location.hash.replace('#', ''); return ['now', 'compare', 'places'].includes(h) ? h : 'now'; }
+const TABS = ['now', 'compare', 'skill', 'places'];
+function currentTab() { const h = location.hash.replace('#', ''); return TABS.includes(h) ? h : 'now'; }
 function renderAll() {
   const tab = currentTab();
-  for (const t of ['now', 'compare', 'places']) $('#view-' + t).hidden = t !== tab;
+  for (const t of TABS) $('#view-' + t).hidden = t !== tab;
   document.querySelectorAll('.tab').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
-  if (tab === 'now') renderNow(); else if (tab === 'compare') renderCompare(); else renderPlaces();
   if (tab !== 'compare' && chart) { chart.destroy(); chart = null; }
+  if (tab !== 'skill' && skillChart) { skillChart.destroy(); skillChart = null; }
+  if (tab === 'now') renderNow(); else if (tab === 'compare') renderCompare(); else if (tab === 'skill') renderSkill(); else renderPlaces();
   updateHeader();
 }
 async function refresh(force) {
@@ -813,6 +834,7 @@ async function refresh(force) {
     const b = await loadPlace(p, force);
     const okN = Object.values(b.sources).filter(s => s.ok).length;
     if (!okN) toast('Could not reach forecast sources — check your connection');
+    else ensureSkill(p, b);   // grades sources in the background (cached ~6 h)
   } catch (e) { toast('Load failed: ' + e.message); }
   finally { state.loading = false; $('#refreshBtn').classList.remove('spin'); if (activePlace()?.id === p.id) renderAll(); }
 }
