@@ -1,5 +1,5 @@
 // App-shell cache only. Weather data always comes from the network.
-const CACHE = 'wxpro-shell-v4';
+const CACHE = 'wxpro-shell-v5';
 const SHELL = ['./', 'index.html', 'app.css', 'skill.js', 'radar.js', 'app.js', 'vendor/chart.umd.min.js', 'vendor/leaflet.js', 'vendor/leaflet.css', 'manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', e => {

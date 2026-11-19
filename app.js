@@ -42,7 +42,16 @@ const PLOTS = {
 };
 const RANGES = { '48h': 48, '5d': 120, '10d': 240 };
 
-const DEFAULT_PLACE = { id: 'alpharetta-ga', name: 'Alpharetta', sub: 'Georgia', lat: 34.0754, lon: -84.2941 };
+// Older versions started everyone on Alpharetta without saving it. Keep it for phones that already used it.
+const LEGACY_PLACE = { id: 'alpharetta-ga', name: 'Alpharetta', sub: 'Georgia', lat: 34.0754, lon: -84.2941 };
+function initialPlaces() {
+  const saved = store.get('places', null);
+  if (saved) return saved;
+  let usedLegacy = false;
+  try { usedLegacy = ['nwsh.', 'skill.'].some(k => localStorage.getItem('wx.' + k + LEGACY_PLACE.id) != null) || store.get('active', null) === LEGACY_PLACE.id; } catch {}
+  if (usedLegacy) { store.set('places', [LEGACY_PLACE]); return [LEGACY_PLACE]; }
+  return [];   // brand-new user: the welcome screen asks for a location
+}
 const CACHE_MS = 10 * 60 * 1000;
 
 /* ---------- State ---------- */
@@ -51,7 +60,7 @@ const store = {
   set(k, v) { try { localStorage.setItem('wx.' + k, JSON.stringify(v)); } catch {} },
 };
 const state = {
-  places: store.get('places', null) || [DEFAULT_PLACE],
+  places: initialPlaces(),
   activeId: store.get('active', null),
   enabled: new Set(store.get('enabled', SOURCES.map(s => s.id))),
   plot: store.get('plot', 'temp'),
@@ -527,9 +536,26 @@ function renderSourceStatus(b) {
   </div>`;
 }
 
+function renderWelcome(el) {
+  el.innerHTML = `
+    <div class="card welcome">
+      <div class="welcome-icon">🌦️</div>
+      <h1>Welcome to WX Pro</h1>
+      <p class="ink2">Compare 8 forecast sources side by side, see which is most accurate where you are, and track radar and alerts. US locations only.</p>
+      <button class="btn primary big" id="wGps">📍 Use my location</button>
+      <div class="or"><span>or search</span></div>
+      <div class="search"><input id="q" type="search" placeholder="City or ZIP" autocomplete="off" enterkeyhint="search"></div>
+      <div class="list" id="results" style="margin-top:6px;text-align:left"></div>
+    </div>
+    <div class="foot" style="text-align:center">Places are saved on this phone only. Add more any time by tapping the place name at the top.</div>`;
+  $('#wGps').addEventListener('click', useGps);
+  const q = $('#q');
+  q.addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => doSearch(q.value.trim()), 350); });
+}
+
 function renderNow() {
   const el = $('#view-now'); const place = activePlace();
-  if (!place) { el.innerHTML = `<div class="card empty">No place yet.<br><br><a href="#places" class="btn primary">Add a place</a></div>`; return; }
+  if (!place) { renderWelcome(el); return; }
   const b = state.data[place.id];
   if (!b) { el.innerHTML = skeleton(4); return; }
   el.innerHTML = renderAlerts(b) + spcCardForNow(place) + renderCurrent(b) + renderAgreement(b) + renderHourly(b) + renderDaily(b) + renderNwsText(b) + renderSourceStatus(b);
