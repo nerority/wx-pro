@@ -9,6 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="vendor/leaflet.css">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -25,6 +26,8 @@
 <main id="main">
   <section id="view-now" class="view"></section>
   <section id="view-compare" class="view" hidden></section>
+  <section id="view-radar" class="view" hidden></section>
+  <section id="view-alerts" class="view" hidden></section>
   <section id="view-skill" class="view" hidden></section>
   <section id="view-places" class="view" hidden></section>
 </main>
@@ -38,19 +41,25 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 17l5-6 4 3 4-7 5 5M3 21h18"/></svg>
     <span>Compare</span>
   </a>
+  <a href="#radar" data-tab="radar" class="tab">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 12l6-6M12 3a9 9 0 1 0 9 9M12 7a5 5 0 1 0 5 5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>
+    <span>Radar</span>
+  </a>
+  <a href="#alerts" data-tab="alerts" class="tab">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2 1 21h22L12 2zm1 16h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+    <span>Alerts</span>
+  </a>
   <a href="#skill" data-tab="skill" class="tab">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 3h10v2h4v3a5 5 0 0 1-4.6 5A5 5 0 0 1 13 15.9V18h3v3H8v-3h3v-2.1A5 5 0 0 1 7.6 13 5 5 0 0 1 3 8V5h4V3zm0 4H5v1a3 3 0 0 0 2 2.8V7zm10 0v3.8A3 3 0 0 0 19 8V7h-2z"/></svg>
     <span>Accuracy</span>
-  </a>
-  <a href="#places" data-tab="places" class="tab">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
-    <span>Places</span>
   </a>
 </nav>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/leaflet.js"></script>
+<script src="radar.js"></script>
 <script src="skill.js"></script>
 <script src="app.js"></script>
 </body>

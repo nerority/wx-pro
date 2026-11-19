@@ -532,7 +532,7 @@ function renderNow() {
   if (!place) { el.innerHTML = `<div class="card empty">No place yet.<br><br><a href="#places" class="btn primary">Add a place</a></div>`; return; }
   const b = state.data[place.id];
   if (!b) { el.innerHTML = skeleton(4); return; }
-  el.innerHTML = renderAlerts(b) + renderCurrent(b) + renderAgreement(b) + renderHourly(b) + renderDaily(b) + renderNwsText(b) + renderSourceStatus(b);
+  el.innerHTML = renderAlerts(b) + spcCardForNow(place) + renderCurrent(b) + renderAgreement(b) + renderHourly(b) + renderDaily(b) + renderNwsText(b) + renderSourceStatus(b);
   el.querySelectorAll('.day').forEach(d => d.addEventListener('click', () => { state.openDay = state.openDay === d.dataset.day ? null : d.dataset.day; renderNow(); }));
 }
 
@@ -816,7 +816,7 @@ function updateHeader() {
   const b = p && state.data[p.id];
   $('#placeSub').textContent = p ? [p.sub, b ? 'updated ' + ago(b.fetchedAt) : (state.loading ? 'loading…' : '')].filter(Boolean).join(' · ') : '';
 }
-const TABS = ['now', 'compare', 'skill', 'places'];
+const TABS = ['now', 'compare', 'radar', 'alerts', 'skill', 'places'];
 function currentTab() { const h = location.hash.replace('#', ''); return TABS.includes(h) ? h : 'now'; }
 function renderAll() {
   const tab = currentTab();
@@ -824,7 +824,10 @@ function renderAll() {
   document.querySelectorAll('.tab').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
   if (tab !== 'compare' && chart) { chart.destroy(); chart = null; }
   if (tab !== 'skill' && skillChart) { skillChart.destroy(); skillChart = null; }
-  if (tab === 'now') renderNow(); else if (tab === 'compare') renderCompare(); else if (tab === 'skill') renderSkill(); else renderPlaces();
+  if (tab !== 'radar') leaveRadar();
+  if (tab === 'now') renderNow(); else if (tab === 'compare') renderCompare(); else if (tab === 'radar') renderRadar();
+  else if (tab === 'alerts') renderAlertsView(); else if (tab === 'skill') renderSkill(); else renderPlaces();
+  updateAlertBadge();
   updateHeader();
 }
 async function refresh(force) {
@@ -835,6 +838,8 @@ async function refresh(force) {
     const okN = Object.values(b.sources).filter(s => s.ok).length;
     if (!okN) toast('Could not reach forecast sources — check your connection');
     else ensureSkill(p, b);   // grades sources in the background (cached ~6 h)
+    if (!b.alertErr) alertCache[p.id] = { at: b.fetchedAt, alerts: b.alerts || [] };
+    refreshAllAlerts().then(() => { const t = currentTab(); if (t === 'now') renderNow(); else if (t === 'alerts') renderAlertsView(); });
   } catch (e) { toast('Load failed: ' + e.message); }
   finally { state.loading = false; $('#refreshBtn').classList.remove('spin'); if (activePlace()?.id === p.id) renderAll(); }
 }
